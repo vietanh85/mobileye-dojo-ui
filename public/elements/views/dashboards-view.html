@@ -1,0 +1,127 @@
+<link rel="import" href="/bower_components/polymer/polymer.html">
+<link rel="import" href="/bower_components/px-card/px-card.html">
+<link rel="import" href="/bower_components/iron-ajax/iron-ajax.html">
+<link rel="import" href="/bower_components/google-map/google-map.html">
+<link rel="import" href="/bower_components/google-map/google-map-marker.html">
+<link rel="import" href="/bower_components/paper-checkbox/paper-checkbox.html">
+
+<!-- local px-deck -->
+<link rel="import" href="/elements/px-deck/px-deck-index.html">
+<style>
+  google-map {
+    height: 600px;
+  }
+</style>
+<dom-module id="dashboards-view">
+  <template>
+    <script type="text/javascript" src="../../bower_components/es6-promise/es6-promise.min.js"></script>
+    <px-card id="alertMap" header-text="Alerts Map">
+      <p>
+        <paper-checkbox id="PCW" value='PCW' checked on-iron-change="checkboxChanged">Critical Ped Alert</paper-checkbox> 
+        <paper-checkbox id="PDZ" value='PDZ' checked on-iron-change="checkboxChanged">Ped Alert</paper-checkbox>
+      </p>
+      <google-map drag-events="true" zoom=15>
+        <google-map-marker icon="https://maps.gstatic.com/mapfiles/ms2/micons/blue-dot.png" latitude="{{center.latitude}}" longitude="{{center.longitude}}"></google-map-marker>
+        <template is="dom-repeat" items="{{markers}}">
+            <google-map-marker icon="https://maps.gstatic.com/mapfiles/ms2/micons/{{item.color}}-pushpin.png" latitude="{{item.latitude}}" title={{item.title}} longitude="{{item.longitude}}"></google-map-marker>
+        </template>
+      </google-map>  
+      <iron-ajax 
+        url="https://mobileye-dojo.run.aws-usw02-pr.ice.predix.io/alerts" 
+        method='POST'
+        handle-as="json"
+        on-response="handleResponse"
+        loading="true"
+      ></iron-ajax>
+      <script>
+      </script>
+
+    </px-card>
+  </template>
+  <script>
+    Polymer({
+      is: 'dashboards-view',
+      attached: function () {
+        var self = this;
+        self.map = document.querySelector('google-map');
+        self.map.latitude = 37.77493;
+        self.map.longitude = -122.41942;
+        self.ajax = document.querySelector('iron-ajax');
+        self.pdz = document.querySelector('paper-checkbox#PDZ');
+        self.pcw = document.querySelector('paper-checkbox#PCW');
+
+        var sendRequest = function() {
+          self.set('center', {
+            latitude: self.map.latitude,
+            longitude: self.map.longitude
+          });
+          var types = ['PDZ', 'PCW'];
+
+          request = {
+            header: {
+              protocol: {
+                version:"0.10",
+                name:"MESADAS_FRONT_JSON"
+              }
+            },
+            data: {
+              type: types,
+              tsstart: "201608251023",
+              tsend: "201608251045",
+              glc: {
+                type:"circle",
+                radius: 1000,
+                center: {
+                  long: self.map.longitude, 
+                  lat: self.map.latitude
+                }
+              }
+            }
+          }
+          if (self.circle) self.circle.setMap(null);
+          self.circle = new google.maps.Circle({
+            strokeColor: '#0000ff',
+            strokeOpacity: 0.8,
+            strokeWeight: 2,
+            fillColor: '#0000ff',
+            fillOpacity: 0.35,
+            map: self.map.map,
+            center: self.map.map.getCenter(),
+            radius: 1000
+          });
+          self.ajax.body = 'webToken=MEDOJO2016&jsonRequest=' + JSON.stringify(request);
+          self.ajax.generateRequest();
+        };
+        self.map.addEventListener('google-map-ready', sendRequest)
+        self.map.addEventListener('google-map-dragend', sendRequest);  
+      },
+      handleResponse: function (e) {
+        var self = this;
+        var response = e.detail.response.response;
+        if (!response.data) return alert("No response from server!");
+        self.clone = response.data.alerts.map(function (a) {
+          // if (a.type === 'PCW' && self.pcw.checked || a.type === 'PDZ' && self.pdz.checked) 
+          return {
+            latitude: a.glc.lat,
+            longitude: a.glc.long,
+            type: a.type,
+            title: (a.type === 'PCW' ? 'Critical Ped Alert' : 'Ped Alert') + ' at ' + new Date(parseInt(a.ts)),
+            color: a.type === 'PCW' ? 'red' : 'ylw'
+          }
+        })
+        var markers = self.clone.slice(0)
+        self.set('markers', markers.filter(function (a) {
+          if (a.type === 'PCW' && self.pcw.checked || a.type === 'PDZ' && self.pdz.checked) return a;
+        }));
+      },
+      checkboxChanged: function (e) {
+        var self = this;
+        if (!self.clone) return;
+        var tmp = self.clone.filter(function (a) {
+          if (a.type === 'PCW' && self.pcw.checked || a.type === 'PDZ' && self.pdz.checked) return a;
+        });
+        self.set('markers', tmp);
+      }
+    });
+  </script>
+</dom-module>
